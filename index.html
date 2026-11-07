@@ -4,13 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WTA | Web Task Agent</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <style>
-:root{--orange:#f6531f;--orange-d:#d94312;--green:#1a7f37;--green-bg:#e6f6ec;--yellow:#9a6700;--yellow-bg:#fff8c5;--line:#e5e5e5;--bg:#fafafa;--text:#222;--muted:#6b6b6b}
+:root{--orange:#f6531f;--orange-d:#d94312;--green:#1a7f37;--green-bg:#e6f6ec;--yellow:#9a6700;--yellow-bg:#fff8c5;--red:#cf222e;--line:#e5e5e5;--bg:#fafafa;--text:#222;--muted:#6b6b6b}
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
 .top{position:fixed;top:0;left:0;right:0;height:56px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 16px;z-index:20}
 .logo{font-weight:bold;font-size:22px;color:var(--orange);letter-spacing:1px}
 .menu-btn{background:none;border:1px solid var(--line);border-radius:6px;font-size:18px;padding:4px 10px;cursor:pointer}
+.right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.who{font-size:13px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none}
+.btn{background:var(--orange);color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer}
+.btn:hover{background:var(--orange-d)}
+.btn:disabled{opacity:.6}
+.btn-o{background:#fff;color:var(--text);border:1px solid var(--line)}
+.btn-o:hover{background:#f3f3f3}
 .side{position:fixed;top:56px;bottom:0;left:0;width:240px;background:#fff;border-right:1px solid var(--line);padding:12px 8px;overflow-y:auto;transform:translateX(-100%);transition:transform .2s;z-index:15}
 .side.open{transform:translateX(0)}
 .side a{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:6px;color:var(--text);text-decoration:none;font-size:15px}
@@ -30,6 +38,19 @@ h2{margin:0 0 4px;font-size:22px}
 .b-green{background:var(--green-bg);color:var(--green)}
 .empty{text-align:center;padding:40px 16px}
 .empty .ico{font-size:36px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;padding:16px}
+.modal.show{display:flex}
+.box{background:#fff;border-radius:10px;padding:20px;width:100%;max-width:380px}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tab{flex:1;padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-size:14px}
+.tab.on{background:#fff1ec;color:var(--orange);border-color:var(--orange);font-weight:bold}
+.box input{width:100%;padding:10px;margin-bottom:10px;border:1px solid var(--line);border-radius:6px;font-size:15px}
+.msg{font-size:13px;margin:4px 0 12px;min-height:16px}
+.msg.err{color:var(--red)}
+.msg.ok{color:var(--green)}
+.row{display:flex;gap:8px}
+.row .btn{flex:1}
+@media(min-width:600px){.who{display:block}}
 @media(min-width:800px){
 .menu-btn{display:none}
 .side{transform:none}
@@ -43,12 +64,43 @@ main{margin-left:240px;padding:80px 32px 32px}
 <div class="top">
 <button class="menu-btn" id="menuBtn" aria-label="Menu">☰</button>
 <span class="logo">WTA</span>
+<div class="right" id="authArea"></div>
 </div>
 <nav class="side" id="side"></nav>
 <div class="shade" id="shade"></div>
 <main id="view"></main>
 
+<div class="modal" id="modal">
+<div class="box">
+<div class="tabs">
+<button class="tab on" id="tabIn" type="button">Sign in</button>
+<button class="tab" id="tabUp" type="button">Create account</button>
+</div>
+<input id="email" type="email" placeholder="Email" autocomplete="email">
+<input id="password" type="password" placeholder="Password (8+ characters)" autocomplete="current-password">
+<div class="msg" id="msg"></div>
+<div class="row">
+<button class="btn btn-o" id="cancelBtn" type="button">Cancel</button>
+<button class="btn" id="submitBtn" type="button">Sign in</button>
+</div>
+</div>
+</div>
+
 <script>
+// ===== SETTINGS =====
+const SUPABASE_URL = "https://lgbtckexyubvhskgljzq.supabase.co";
+const SUPABASE_KEY = "sb_publishable_iBVXrI8v9e8dUtT6wF51jw_8iycTB-8";
+
+let sb = null;
+try {
+  if (!SUPABASE_KEY.startsWith("PASTE")) sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+} catch (e) { sb = null; }
+
+let user = null;
+let workspace = null;
+let mode = "in";
+
+// ===== PAGES =====
 const pages = [
  {id:"dashboard", icon:"🏠", name:"Dashboard"},
  {id:"workspace", icon:"💬", name:"AI Workspace", desc:"Give instructions to the agent and watch it work."},
@@ -65,45 +117,184 @@ const pages = [
 const side = document.getElementById("side");
 const view = document.getElementById("view");
 const shade = document.getElementById("shade");
+side.innerHTML = pages.map(p => '<a href="#' + p.id + '" data-id="' + p.id + '"><span>' + p.icon + '</span>' + p.name + '</a>').join("");
 
-side.innerHTML = pages.map(p => `<a href="#${p.id}" data-id="${p.id}"><span>${p.icon}</span>${p.name}</a>`).join("");
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
 
-function render(){
+// ===== HEADER (sign in / sign out) =====
+function renderAuthArea() {
+  const area = document.getElementById("authArea");
+  area.innerHTML = "";
+  if (user) {
+    area.appendChild(el("span", user.email, "who"));
+    const out = el("button", "Sign out", "btn btn-o");
+    out.onclick = signOut;
+    area.appendChild(out);
+  } else {
+    const inn = el("button", "Sign in", "btn");
+    inn.onclick = openModal;
+    area.appendChild(inn);
+  }
+}
+
+// ===== PAGE CONTENT =====
+function render() {
   const id = location.hash.slice(1) || "dashboard";
   const p = pages.find(x => x.id === id) || pages[0];
   side.querySelectorAll("a").forEach(a => a.classList.toggle("active", a.dataset.id === p.id));
-  if(p.id === "dashboard"){
-    view.innerHTML = `
-      <h2>Dashboard</h2>
-      <p class="sub">Welcome to WTA (Web Task Agent).</p>
-      <div class="grid">
-        <div class="card"><div class="num">0</div><div class="label">Tasks running</div></div>
-        <div class="card"><div class="num">0</div><div class="label">Tasks completed</div></div>
-        <div class="card"><div class="num">0</div><div class="label">Sources collected</div></div>
-      </div>
-      <div class="card" style="margin-top:12px">
-        <b>System status</b><br><br>
-        Frontend: <span class="badge b-green">Live</span><br><br>
-        Backend and agent: <span class="badge b-yellow">Not connected yet</span>
-      </div>`;
+  view.innerHTML = "";
+
+  if (p.id === "dashboard") {
+    view.appendChild(el("h2", "Dashboard"));
+    view.appendChild(el("p", "Welcome to WTA (Web Task Agent).", "sub"));
+
+    const g = el("div", undefined, "grid");
+    [["0","Tasks running"],["0","Tasks completed"],["0","Sources collected"]].forEach(function (x) {
+      const c = el("div", undefined, "card");
+      c.appendChild(el("div", x[0], "num"));
+      c.appendChild(el("div", x[1], "label"));
+      g.appendChild(c);
+    });
+    view.appendChild(g);
+
+    const acct = el("div", undefined, "card");
+    acct.style.marginTop = "12px";
+    acct.appendChild(el("b", "Account"));
+    acct.appendChild(document.createElement("br"));
+    acct.appendChild(document.createElement("br"));
+    if (user) {
+      acct.appendChild(el("span", "Signed in", "badge b-green"));
+      acct.appendChild(document.createElement("br"));
+      acct.appendChild(document.createElement("br"));
+      const ws = workspace ? workspace.name + " (" + workspace.type + ")" : "Loading workspace...";
+      acct.appendChild(document.createTextNode("Workspace: " + ws));
+    } else {
+      acct.appendChild(el("span", "Guest mode", "badge b-yellow"));
+      acct.appendChild(document.createElement("br"));
+      acct.appendChild(document.createElement("br"));
+      acct.appendChild(document.createTextNode("You are viewing WTA as a guest. Sign in to save your work."));
+    }
+    view.appendChild(acct);
+
+    const st = el("div", undefined, "card");
+    st.style.marginTop = "12px";
+    st.appendChild(el("b", "System status"));
+    st.appendChild(document.createElement("br"));
+    st.appendChild(document.createElement("br"));
+    st.appendChild(document.createTextNode("Frontend: "));
+    st.appendChild(el("span", "Live", "badge b-green"));
+    st.appendChild(document.createElement("br"));
+    st.appendChild(document.createElement("br"));
+    st.appendChild(document.createTextNode("Database and login: "));
+    st.appendChild(sb ? el("span", "Connected", "badge b-green") : el("span", "Key missing", "badge b-yellow"));
+    st.appendChild(document.createElement("br"));
+    st.appendChild(document.createElement("br"));
+    st.appendChild(document.createTextNode("Agent backend: "));
+    st.appendChild(el("span", "Not connected yet", "badge b-yellow"));
+    view.appendChild(st);
   } else {
-    view.innerHTML = `
-      <h2>${p.name}</h2>
-      <p class="sub">${p.desc}</p>
-      <div class="card empty">
-        <div class="ico">${p.icon}</div>
-        <p><b>Not built yet</b></p>
-        <p class="label">This section will work once the backend is connected.</p>
-        <span class="badge b-yellow">Coming soon</span>
-      </div>`;
+    view.appendChild(el("h2", p.name));
+    view.appendChild(el("p", p.desc, "sub"));
+    const c = el("div", undefined, "card empty");
+    c.appendChild(el("div", p.icon, "ico"));
+    c.appendChild(el("p", "Not built yet"));
+    c.appendChild(el("p", "This section will work once the agent backend is connected.", "label"));
+    c.appendChild(el("span", "Coming soon", "badge b-yellow"));
+    view.appendChild(c);
   }
   side.classList.remove("open");
   shade.classList.remove("show");
-  window.scrollTo(0,0);
+  window.scrollTo(0, 0);
 }
-document.getElementById("menuBtn").onclick = () => { side.classList.toggle("open"); shade.classList.toggle("show"); };
-shade.onclick = () => { side.classList.remove("open"); shade.classList.remove("show"); };
+
+// ===== LOGIN WINDOW =====
+const modal = document.getElementById("modal");
+const msg = document.getElementById("msg");
+const submitBtn = document.getElementById("submitBtn");
+
+function setMsg(text, kind) { msg.textContent = text; msg.className = "msg " + (kind || ""); }
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("tabIn").classList.toggle("on", m === "in");
+  document.getElementById("tabUp").classList.toggle("on", m === "up");
+  submitBtn.textContent = m === "in" ? "Sign in" : "Create account";
+  document.getElementById("password").autocomplete = m === "in" ? "current-password" : "new-password";
+  setMsg("");
+}
+function openModal() {
+  if (!sb) { alert("Login is not set up yet. The Supabase key is missing in index.html."); return; }
+  setMode("in");
+  modal.classList.add("show");
+}
+function closeModal() { modal.classList.remove("show"); }
+
+document.getElementById("tabIn").onclick = function () { setMode("in"); };
+document.getElementById("tabUp").onclick = function () { setMode("up"); };
+document.getElementById("cancelBtn").onclick = closeModal;
+modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
+
+submitBtn.onclick = async function () {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  if (!email || !password) { setMsg("Enter your email and password.", "err"); return; }
+  if (mode === "up" && password.length < 8) { setMsg("Password must be at least 8 characters.", "err"); return; }
+  submitBtn.disabled = true;
+  setMsg("Please wait...");
+  try {
+    if (mode === "in") {
+      const r = await sb.auth.signInWithPassword({ email: email, password: password });
+      if (r.error) throw r.error;
+      closeModal();
+    } else {
+      const r = await sb.auth.signUp({ email: email, password: password, options: { emailRedirectTo: location.origin } });
+      if (r.error) throw r.error;
+      if (r.data.session) { closeModal(); }
+      else { setMsg("Account created. Check your email and tap the confirmation link, then sign in.", "ok"); }
+    }
+  } catch (err) {
+    setMsg(err.message || "Something went wrong.", "err");
+  }
+  submitBtn.disabled = false;
+};
+
+async function signOut() { if (sb) await sb.auth.signOut(); }
+
+// ===== LOAD USER AND WORKSPACE =====
+async function loadWorkspace() {
+  workspace = null;
+  if (!sb || !user) return;
+  const r = await sb.from("workspaces").select("name,type").limit(1);
+  if (!r.error && r.data && r.data.length) workspace = r.data[0];
+}
+
+async function setUser(u) {
+  user = u;
+  renderAuthArea();
+  render();
+  await loadWorkspace();
+  render();
+}
+
+if (sb) {
+  sb.auth.getSession().then(function (r) { setUser(r.data.session ? r.data.session.user : null); });
+  sb.auth.onAuthStateChange(function (event, session) {
+    const u = session ? session.user : null;
+    if ((u && u.id) !== (user && user.id)) setUser(u);
+  });
+}
+
+// ===== MENU =====
+document.getElementById("menuBtn").onclick = function () { side.classList.toggle("open"); shade.classList.toggle("show"); };
+shade.onclick = function () { side.classList.remove("open"); shade.classList.remove("show"); };
 window.addEventListener("hashchange", render);
+
+renderAuthArea();
 render();
 </script>
 </body>
