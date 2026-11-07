@@ -11,14 +11,17 @@ try { sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) { sb =
 let user = null, workspace = null, mode = "in";
 let tasks = [], approvalList = [], reports = [], reportCount = 0, dataLoaded = false;
 let chat = [], chatBusy = false, wsTab = "task", draft = "", planBusy = false;
+let taskFilter = "all", taskQuery = "";
 const openG = { "Platform": true };
 
 const LEVELS = { 1: "Quick search", 2: "Standard research", 3: "Deep research", 4: "Extensive research" };
 const STEPS = ["Understand the request", "Plan the searches", "Search the web", "Read and extract from pages", "Verify the sources", "Write the report"];
+const STEP_ICONS = ["🧠", "🗺️", "🔎", "📖", "🛡️", "📝"];
 const STATUS = {
   planned: ["Plan ready", "b-orange"], running: ["Running", "b-yellow"], paused: ["Paused", "b-grey"],
   completed: ["Completed", "b-green"], failed: ["Failed", "b-red"], cancelled: ["Cancelled", "b-grey"]
 };
+const LOGO = '<svg width="30" height="30" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="9" fill="#f6531f"/><path d="M7 10l5 16 6-11 6 11 5-16" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="15" r="2.6" fill="#ffd43b"/></svg>';
 
 // ===== PAGES =====
 const pages = {};
@@ -94,6 +97,9 @@ function timeAgo(iso) {
 function badge(status) { const b = STATUS[status] || ["Unknown", "b-grey"]; return '<span class="badge ' + b[1] + '">' + b[0] + '</span>'; }
 function go(id) { if (location.hash === "#" + id) render(); else location.hash = "#" + id; }
 function stepsDone(t) { return t.status === "completed" ? 6 : 2; }
+function isActive(t) { return ["planned", "running", "paused"].indexOf(t.status) >= 0; }
+function groupOf(id) { for (let i = 0; i < groups.length; i++) if (groups[i].items.indexOf(id) >= 0) return groups[i].label; return ""; }
+function greeting() { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; }
 function emptyBlock(icon, title, text) {
   const d = el("div", undefined, "empty");
   d.innerHTML = '<div class="ico">' + icon + '</div><b>' + esc(title) + '</b>' + esc(text);
@@ -106,6 +112,14 @@ function makeCard(title, extra) {
   if (extra) h.appendChild(extra);
   c.appendChild(h);
   return c;
+}
+function signInCard(text) {
+  const card = el("div", undefined, "card");
+  card.appendChild(emptyBlock("🔒", "Sign in to continue", text));
+  const w = el("div"); w.style.textAlign = "center";
+  const b = el("button", "Sign in", "btn"); b.onclick = openModal;
+  w.appendChild(b); card.appendChild(w);
+  return card;
 }
 async function getToken() {
   const s = await sb.auth.getSession();
@@ -141,6 +155,23 @@ function buildSide(activeId) {
     side.appendChild(btn);
     side.appendChild(box);
   });
+  const foot = el("div", undefined, "sfoot");
+  if (user) {
+    const nm = user.email.split("@")[0];
+    foot.appendChild(el("div", nm.charAt(0).toUpperCase(), "avatar"));
+    const t = el("div");
+    t.appendChild(el("b", nm));
+    t.appendChild(el("small", workspace ? workspace.name : user.email));
+    foot.appendChild(t);
+  } else {
+    foot.appendChild(el("div", "G", "avatar"));
+    const t = el("div");
+    t.appendChild(el("b", "Guest"));
+    const s = el("button", "Sign in", "btn btn-s"); s.onclick = openModal;
+    t.appendChild(s);
+    foot.appendChild(t);
+  }
+  side.appendChild(foot);
   side.scrollTop = keep;
 }
 
@@ -149,6 +180,11 @@ function renderAuthArea() {
   const area = document.getElementById("authArea");
   area.innerHTML = "";
   if (user) {
+    const bell = el("button", "🔔", "bell");
+    bell.setAttribute("aria-label", "Pending approvals");
+    if (approvalList.length) bell.appendChild(el("i", String(approvalList.length)));
+    bell.onclick = function () { go("dashboard"); };
+    area.appendChild(bell);
     area.appendChild(el("span", user.email, "who"));
     const out = el("button", "Sign out", "btn btn-o");
     out.onclick = signOut;
@@ -160,18 +196,7 @@ function renderAuthArea() {
   }
 }
 
-// ===== TASK PIECES =====
-function taskRow(t) {
-  const a = el("a", undefined, "trow");
-  a.href = "#task/" + t.id;
-  const done = stepsDone(t);
-  a.innerHTML =
-    '<div class="trow-top"><b>' + esc(t.title) + '</b>' + badge(t.status) + '</div>' +
-    '<div class="meta"><span>' + esc(LEVELS[t.level] || "Research") + '</span><span>' + timeAgo(t.created_at) + '</span></div>' +
-    '<div class="prog"><i style="width:' + Math.round(done / 6 * 100) + '%"></i></div>' +
-    '<div class="meta"><span>' + (t.status === "completed" ? "All steps done" : "Plan ready: " + done + " of 6 steps") + '</span></div>';
-  return a;
-}
+// ===== PLAN PIECES =====
 function listHtml(arr) { return arr && arr.length ? '<ul class="feat">' + arr.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") + '</ul>' : ""; }
 function chipsHtml(arr) { return arr && arr.length ? arr.map(function (q) { return '<span class="qchip">' + esc(q) + '</span>'; }).join("") : ""; }
 function sec(title, body) { return body ? '<div class="sec"><h4>' + title + '</h4>' + body + '</div>' : ""; }
@@ -193,11 +218,24 @@ function planHtml(p) {
     sec("How sources will be judged", listHtml(p.evaluation_criteria)) +
     sec("Assumptions", listHtml(p.assumptions));
 }
-function stepsHtml(done) {
-  return '<ol class="trk">' + STEPS.map(function (s, i) {
+function nodeHtml(icon, title, sub, state) {
+  return '<div class="node ' + state + '"><div class="ni">' + (state === "d" ? "✓" : icon) + '</div><div><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></div></div>';
+}
+function flowHtml(t) {
+  const done = stepsDone(t), p = t.plan || {};
+  let h = '<div class="flow">';
+  h += nodeHtml("📝", "Your request", t.instruction.length > 140 ? t.instruction.slice(0, 140) + "..." : t.instruction, "d");
+  STEPS.forEach(function (s, i) {
     const d = i < done;
-    return '<li class="' + (d ? "d" : "") + '"><span class="dot">' + (d ? "✓" : "") + '</span><span>' + s + '</span><em>' + (d ? "Done" : "Not started") + '</em></li>';
-  }).join("") + '</ol>';
+    let sub = "Not started";
+    if (d && i === 0) sub = p.objective || "Request understood";
+    if (d && i === 1) sub = (p.queries ? p.queries.length : 0) + " search queries, " + (LEVELS[p.recommended_level] || "research").toLowerCase();
+    if (d && i > 1) sub = "Done";
+    h += '<div class="conn ' + (d ? "d" : "") + '"></div>' + nodeHtml(STEP_ICONS[i], s, sub, d ? "d" : "n");
+  });
+  const fin = t.status === "completed";
+  h += '<div class="conn ' + (fin ? "d" : "") + '"></div>' + nodeHtml("🏁", "Task completed", fin ? "Result delivered" : "Not finished", fin ? "d" : "n");
+  return h + '</div>';
 }
 
 // ===== DATA =====
@@ -216,6 +254,7 @@ async function loadData() {
   if (!a.error && a.data) approvalList = a.data;
   const r = await sb.from("reports").select("id,title,created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(5);
   if (!r.error && r.data) { reports = r.data; reportCount = r.count || r.data.length; }
+  renderAuthArea();
 }
 async function decide(id, status) {
   const r = await sb.from("approvals").update({ status: status }).eq("id", id);
@@ -226,88 +265,139 @@ async function decide(id, status) {
 function statCard(icon, num, label) {
   return '<div class="card stat"><div class="sico">' + icon + '</div><div><div class="num">' + num + '</div><div class="label">' + label + '</div></div></div>';
 }
+function startTask(prefix, tab) {
+  if (!user) { openModal(); return; }
+  if (prefix) draft = prefix;
+  wsTab = tab || "task";
+  go("workspace");
+}
 function renderDashboard() {
   const name = user ? user.email.split("@")[0] : "";
-  const hero = el("div", undefined, "hero");
-  hero.appendChild(el("h2", user ? "Good to see you, " + name : "Give WTA a task"));
-  hero.appendChild(el("p", user
-    ? "Describe the work. WTA plans it step by step and shows you the plan first."
-    : "Describe the work and WTA plans it step by step. Sign in to save your tasks."));
-  const ta = document.createElement("textarea");
-  ta.className = "hero-ta";
-  ta.placeholder = "For example: Compare five recent developments in AI";
-  ta.maxLength = 2000;
-  ta.value = draft;
-  ta.oninput = function () { draft = ta.value; };
-  hero.appendChild(ta);
-  const acts = el("div", undefined, "acts");
-  const b = el("button", user ? "Plan this task" : "Sign in to start", "btn");
-  b.onclick = function () {
-    if (!user) { openModal(); return; }
-    if (!draft.trim()) { ta.focus(); return; }
-    wsTab = "task"; go("workspace");
-  };
-  acts.appendChild(b);
-  hero.appendChild(acts);
-  view.appendChild(hero);
-
-  const active = tasks.filter(function (t) { return ["planned", "running", "paused"].indexOf(t.status) >= 0; });
+  const active = tasks.filter(isActive);
   const done = tasks.filter(function (t) { return t.status === "completed"; });
+
+  const dash = el("div", undefined, "dash");
+  const main = el("div", undefined, "col");
+  const rail = el("div", undefined, "col");
+
+  // greeting
+  const g = el("div");
+  g.appendChild(el("h2", user ? greeting() + ", " + name : "Welcome to WTA"));
+  g.appendChild(el("p", user ? "Here is what WTA is working on." : "Give WTA a task and it plans the work step by step. Sign in to save your tasks.", "sub"));
+  g.lastChild.style.marginBottom = "0";
+  main.appendChild(g);
+
+  // stats
   const stats = el("div", undefined, "stats");
   stats.innerHTML = statCard("⚡", active.length, "Active tasks") + statCard("✅", done.length, "Completed workflows") +
     statCard("🔔", approvalList.length, "Pending approvals") + statCard("📄", reportCount, "Reports");
-  view.appendChild(stats);
+  main.appendChild(stats);
 
-  const cols = el("div", undefined, "cols");
-  const left = el("div"), right = el("div");
+  // workspace panel
+  const wsp = el("div", undefined, "card wsp");
+  const wh = el("div", undefined, "wsp-head");
+  wh.appendChild(el("h3", "AI Workspace"));
+  const open = el("a", "Open full workspace", "btn btn-o btn-s"); open.href = "#workspace";
+  wh.appendChild(open);
+  wsp.appendChild(wh);
+  const body = el("div", undefined, "wsp-body");
 
-  const c1 = makeCard("Active agent tasks");
-  if (active.length) active.slice(0, 5).forEach(function (t) { c1.appendChild(taskRow(t)); });
-  else c1.appendChild(emptyBlock("⚡", "No active tasks", "Describe a task above and its plan and progress will appear here."));
-  left.appendChild(c1);
+  const ai = el("div", undefined, "ai");
+  const av = el("div", undefined, "av"); av.innerHTML = LOGO;
+  const tx = el("div", undefined, "tx");
+  if (user) {
+    tx.innerHTML = '<div>Hello ' + esc(name) + '. Here is your brief:</div><ul class="brief">' +
+      '<li><span class="bd" style="background:#f6531f"></span>' + active.length + (active.length === 1 ? " active task" : " active tasks") + '</li>' +
+      '<li><span class="bd" style="background:#9a6700"></span>' + approvalList.length + (approvalList.length === 1 ? " approval waiting" : " approvals waiting") + '</li>' +
+      '<li><span class="bd" style="background:#1a7f37"></span>' + reportCount + (reportCount === 1 ? " report ready" : " reports ready") + '</li></ul>' +
+      '<div style="margin-top:8px">What should I work on?</div>';
+  } else {
+    tx.textContent = "Hello. Tell me what you need done and I will plan it step by step. Sign in to get started.";
+  }
+  ai.appendChild(av); ai.appendChild(tx);
+  body.appendChild(ai);
 
+  const quick = el("div", undefined, "quick");
+  [["Plan a task", "", "task"], ["Research a topic", "Research: ", "task"], ["Plan an assignment", "Assignment: ", "task"], ["Ask a question", "", "ask"]].forEach(function (q) {
+    const c = el("button", q[0], "chip"); c.type = "button";
+    c.onclick = function () { startTask(q[1], q[2]); };
+    quick.appendChild(c);
+  });
+  body.appendChild(quick);
+
+  const comp = el("div", undefined, "wsp-comp");
+  const ta = document.createElement("textarea");
+  ta.placeholder = "Type a task or ask anything";
+  ta.maxLength = 2000; ta.value = draft;
+  ta.oninput = function () { draft = ta.value; };
+  const send = el("button", "➤", "send-round");
+  send.setAttribute("aria-label", "Plan this task");
+  send.onclick = function () { if (!user) { openModal(); return; } if (!draft.trim()) { ta.focus(); return; } startTask("", "task"); };
+  comp.appendChild(ta); comp.appendChild(send);
+  body.appendChild(comp);
+  wsp.appendChild(body);
+  main.appendChild(wsp);
+
+  // completed workflows
   const c2 = makeCard("Completed workflows");
-  if (done.length) done.slice(0, 3).forEach(function (t) { c2.appendChild(taskRow(t)); });
+  if (done.length) done.slice(0, 3).forEach(function (t) {
+    const a = el("a", undefined, "feed ok"); a.href = "#task/" + t.id;
+    a.innerHTML = '<div class="fi">✓</div><div>' + esc(t.title) + '<small>' + timeAgo(t.created_at) + '</small></div>';
+    c2.appendChild(a);
+  });
   else c2.appendChild(emptyBlock("✅", "Nothing completed yet", "Finished tasks will be listed here."));
-  left.appendChild(c2);
+  main.appendChild(c2);
 
+  // right rail: progress
+  const c1 = makeCard("Task progress");
+  if (active.length) active.slice(0, 5).forEach(function (t) {
+    const d = stepsDone(t);
+    const a = el("a", undefined, "prow"); a.href = "#task/" + t.id; a.style.display = "block";
+    a.innerHTML = '<div class="prow-top"><span>' + esc(t.title) + '</span><span>' + d + ' of 6</span></div><div class="prog"><i style="width:' + Math.round(d / 6 * 100) + '%"></i></div>';
+    c1.appendChild(a);
+  });
+  else c1.appendChild(emptyBlock("⚡", "No active tasks", "Plan a task and its progress will show here."));
+  rail.appendChild(c1);
+
+  // approvals
   const c3 = makeCard("Pending approvals");
-  if (approvalList.length) {
-    approvalList.slice(0, 5).forEach(function (a) {
-      const d = el("div", undefined, "arow");
-      d.innerHTML = '<b>' + esc(a.action) + '</b><div class="meta"><span>' + esc(a.details || "") + '</span></div>';
-      const r = el("div", undefined, "acts");
-      const ok = el("button", "Approve", "btn btn-s"); ok.onclick = function () { decide(a.id, "approved"); };
-      const no = el("button", "Reject", "btn btn-r btn-s"); no.onclick = function () { decide(a.id, "rejected"); };
-      r.appendChild(ok); r.appendChild(no); d.appendChild(r);
-      c3.appendChild(d);
-    });
-  } else c3.appendChild(emptyBlock("🔔", "Nothing needs your approval", "WTA will ask here before it takes any consequential action."));
-  right.appendChild(c3);
+  if (approvalList.length) approvalList.slice(0, 5).forEach(function (a) {
+    const d = el("div", undefined, "arow");
+    d.innerHTML = '<b>' + esc(a.action) + '</b><div class="meta"><span>' + esc(a.details || "") + '</span></div>';
+    const r = el("div", undefined, "acts");
+    const ok = el("button", "Approve", "btn btn-s"); ok.onclick = function () { decide(a.id, "approved"); };
+    const no = el("button", "Reject", "btn btn-r btn-s"); no.onclick = function () { decide(a.id, "rejected"); };
+    r.appendChild(ok); r.appendChild(no); d.appendChild(r);
+    c3.appendChild(d);
+  });
+  else c3.appendChild(emptyBlock("🔔", "Nothing needs your approval", "WTA will ask here before it takes any consequential action."));
+  rail.appendChild(c3);
 
+  // activity
+  const c5 = makeCard("Activity");
+  if (tasks.length) tasks.slice(0, 5).forEach(function (t) {
+    const a = el("a", undefined, "feed" + (t.status === "completed" ? " ok" : "")); a.href = "#task/" + t.id;
+    a.innerHTML = '<div class="fi">' + (t.status === "completed" ? "✓" : "🗺️") + '</div><div>' + (t.status === "completed" ? "Completed: " : "Planned: ") + esc(t.title) + '<small>' + timeAgo(t.created_at) + '</small></div>';
+    c5.appendChild(a);
+  });
+  else c5.appendChild(emptyBlock("🕘", "No activity yet", "Your tasks will show up here."));
+  rail.appendChild(c5);
+
+  // reports
   const c4 = makeCard("Recent reports");
-  if (reports.length) {
-    reports.forEach(function (r) {
-      const d = el("div", undefined, "arow");
-      d.innerHTML = '<b>' + esc(r.title) + '</b><div class="meta"><span>' + timeAgo(r.created_at) + '</span></div>';
-      c4.appendChild(d);
-    });
-  } else c4.appendChild(emptyBlock("📄", "No reports yet", "Reports WTA writes for you will appear here."));
-  right.appendChild(c4);
+  if (reports.length) reports.forEach(function (r) {
+    const d = el("div", undefined, "feed");
+    d.innerHTML = '<div class="fi">📄</div><div>' + esc(r.title) + '<small>' + timeAgo(r.created_at) + '</small></div>';
+    c4.appendChild(d);
+  });
+  else c4.appendChild(emptyBlock("📄", "No reports yet", "Reports WTA writes for you will appear here."));
+  rail.appendChild(c4);
 
-  cols.appendChild(left); cols.appendChild(right);
-  view.appendChild(cols);
+  dash.appendChild(main); dash.appendChild(rail);
+  view.appendChild(dash);
 }
 
 // ===== AI WORKSPACE =====
-function signInCard(text) {
-  const card = el("div", undefined, "card");
-  card.appendChild(emptyBlock("🔒", "Sign in to continue", text));
-  const w = el("div"); w.style.textAlign = "center";
-  const b = el("button", "Sign in", "btn"); b.onclick = openModal;
-  w.appendChild(b); card.appendChild(w);
-  return card;
-}
 function renderWorkspace() {
   const p = pages.workspace;
   view.appendChild(el("h2", p.icon + " " + p.name));
@@ -456,72 +546,137 @@ async function sendChat() {
   chatBusy = false; drawChat();
 }
 
-// ===== TASKS =====
-function renderTasks() {
-  const p = pages.tasks;
-  view.appendChild(el("h2", p.icon + " " + p.name));
-  view.appendChild(el("p", p.desc, "sub"));
+// ===== TASKS (list on the left, flow on the right) =====
+function filteredTasks() {
+  return tasks.filter(function (t) {
+    if (taskFilter === "active" && !isActive(t)) return false;
+    if (taskFilter === "completed" && t.status !== "completed") return false;
+    if (taskQuery && (t.title + " " + t.instruction).toLowerCase().indexOf(taskQuery.toLowerCase()) < 0) return false;
+    return true;
+  });
+}
+function drawTaskList(box, selId) {
+  box.innerHTML = "";
+  const list = filteredTasks();
+  if (!list.length) { box.appendChild(emptyBlock("🔍", tasks.length ? "No matching tasks" : "No tasks yet", tasks.length ? "Try a different search or filter." : "Plan a task in the AI Workspace and it will be saved here.")); return; }
+  list.forEach(function (t) {
+    const a = el("a", undefined, "titem" + (t.id === selId ? " sel" : ""));
+    a.href = "#task/" + t.id;
+    a.innerHTML = '<div class="tt"><b>' + esc(t.title) + '</b>' + badge(t.status) + '</div><div class="meta"><span>' + esc(LEVELS[t.level] || "Research") + '</span><span>' + timeAgo(t.created_at) + '</span></div>';
+    box.appendChild(a);
+  });
+}
+
+function renderTasks(taskId) {
+  view.appendChild(el("h2", pages.tasks.icon + " Tasks"));
+  view.appendChild(el("p", pages.tasks.desc, "sub"));
   if (!user) { view.appendChild(signInCard("Sign in to see your tasks.")); return; }
-  const nb = el("button", "New task", "btn");
-  nb.onclick = function () { wsTab = "task"; go("workspace"); };
-  const card = makeCard("All tasks", nb);
-  if (!dataLoaded) card.appendChild(el("p", "Loading...", "sub"));
-  else if (tasks.length) tasks.forEach(function (t) { card.appendChild(taskRow(t)); });
-  else card.appendChild(emptyBlock("✅", "No tasks yet", "Give WTA a task in the AI Workspace and it will be saved here."));
-  view.appendChild(card);
-}
-
-function renderTask(id) {
-  const back = el("a", "Back to tasks", "btn btn-o btn-s");
-  back.href = "#tasks"; back.style.marginBottom = "14px";
-  view.appendChild(back);
-  if (!user) { view.appendChild(signInCard("Sign in to see this task.")); return; }
   if (!dataLoaded) { view.appendChild(el("p", "Loading...", "sub")); return; }
-  const t = tasks.find(function (x) { return x.id === id; });
-  if (!t) { view.appendChild(emptyBlock("🔍", "Task not found", "It may have been deleted.")); return; }
 
-  view.appendChild(el("h2", t.title));
-  const meta = el("div", undefined, "meta");
-  meta.style.marginBottom = "14px";
-  meta.innerHTML = badge(t.status) + '<span>' + esc(LEVELS[t.level] || "Research") + '</span><span>Created ' + timeAgo(t.created_at) + '</span>';
-  view.appendChild(meta);
+  const sel = (taskId && tasks.find(function (x) { return x.id === taskId; })) || (!taskId ? tasks[0] : null);
+  const split = el("div", undefined, "split" + (taskId ? " has-detail" : ""));
 
-  const c1 = makeCard("Your instruction");
-  c1.appendChild(el("p", t.instruction));
-  c1.lastChild.style.cssText = "margin:0;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere";
-  view.appendChild(c1);
+  // list pane
+  const lp = el("div", undefined, "listpane");
+  const lc = el("div", undefined, "card");
+  const head = el("div", undefined, "head-row");
+  head.appendChild(el("h3", "All tasks"));
+  const nb = el("button", "New task", "btn btn-s");
+  nb.onclick = function () { wsTab = "task"; go("workspace"); };
+  head.appendChild(nb);
+  lc.appendChild(head);
+  const q = document.createElement("input");
+  q.className = "search"; q.placeholder = "Search tasks"; q.value = taskQuery;
+  lc.appendChild(q);
+  const fl = el("div", undefined, "tfilter");
+  const box = el("div");
+  [["all", "All"], ["active", "Active"], ["completed", "Completed"]].forEach(function (f) {
+    const b = el("button", f[1], taskFilter === f[0] ? "on" : ""); b.type = "button";
+    b.onclick = function () { taskFilter = f[0]; Array.prototype.forEach.call(fl.children, function (x) { x.classList.remove("on"); }); b.classList.add("on"); drawTaskList(box, sel && sel.id); };
+    fl.appendChild(b);
+  });
+  lc.appendChild(fl);
+  q.oninput = function () { taskQuery = q.value; drawTaskList(box, sel && sel.id); };
+  lc.appendChild(box);
+  drawTaskList(box, sel && sel.id);
+  lp.appendChild(lc);
 
-  const c2 = makeCard("Progress");
-  const stepsBox = el("div"); stepsBox.innerHTML = stepsHtml(stepsDone(t));
-  c2.appendChild(stepsBox);
-  if (t.status === "planned") c2.appendChild(el("div", "Plan ready. Live searching, reading pages and report writing arrive in an upcoming update, so this task stays at the planning stage for now.", "note"));
-  view.appendChild(c2);
+  // detail pane
+  const dp = el("div", undefined, "detailpane");
+  const back = el("a", "Back to tasks", "btn btn-o btn-s backlink"); back.href = "#tasks";
+  dp.appendChild(back);
+  if (!sel) {
+    const c = el("div", undefined, "card");
+    c.appendChild(emptyBlock(taskId ? "🔍" : "🗺️", taskId ? "Task not found" : "Pick a task", taskId ? "It may have been deleted." : "Its plan and progress will appear here."));
+    dp.appendChild(c);
+  } else {
+    const hc = el("div", undefined, "card");
+    hc.style.marginBottom = "16px";
+    hc.innerHTML = '<div class="trow-top" style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><h3 style="font-size:18px;line-height:1.35;overflow-wrap:anywhere">' + esc(sel.title) + '</h3>' + badge(sel.status) + '</div>' +
+      '<div class="meta"><span>' + esc(LEVELS[sel.level] || "Research") + '</span><span>Created ' + timeAgo(sel.created_at) + '</span></div>';
+    dp.appendChild(hc);
 
-  const c3 = makeCard("The plan");
-  const pb = el("div"); pb.innerHTML = planHtml(t.plan);
-  c3.appendChild(pb);
-  view.appendChild(c3);
+    const fc = makeCard("Task flow");
+    const fb = el("div"); fb.innerHTML = flowHtml(sel);
+    fc.appendChild(fb);
+    if (sel.status === "planned") fc.appendChild(el("div", "Plan ready. Live searching, reading pages and report writing arrive in an upcoming update, so this task stays at the planning stage for now.", "note"));
+    dp.appendChild(fc);
 
-  const del = el("button", "Delete task", "btn btn-r");
-  del.onclick = async function () {
-    if (!confirm("Delete this task? This cannot be undone.")) return;
-    const r = await sb.from("tasks").delete().eq("id", t.id);
-    if (r.error) { alert("Could not delete the task. Please try again."); return; }
-    await loadData(); go("tasks");
-  };
-  view.appendChild(del);
+    const pc = makeCard("The plan");
+    pc.style.marginTop = "16px";
+    const pb = el("div"); pb.innerHTML = planHtml(sel.plan);
+    pc.appendChild(pb);
+    dp.appendChild(pc);
+
+    const del = el("button", "Delete task", "btn btn-r");
+    del.style.marginTop = "16px";
+    del.onclick = async function () {
+      if (!confirm("Delete this task? This cannot be undone.")) return;
+      const r = await sb.from("tasks").delete().eq("id", sel.id);
+      if (r.error) { alert("Could not delete the task. Please try again."); return; }
+      await loadData(); go("tasks");
+    };
+    dp.appendChild(del);
+  }
+
+  split.appendChild(lp); split.appendChild(dp);
+  view.appendChild(split);
 }
 
-// ===== GENERIC PAGE =====
+// ===== OTHER SECTIONS =====
 function renderPage(id) {
   const p = pages[id];
-  view.appendChild(el("h2", p.icon + " " + p.name));
-  view.appendChild(el("p", p.desc, "sub"));
-  const tag = el("span", "Coming soon", "badge b-yellow");
-  const c = makeCard("What you will be able to do", tag);
-  const d = el("div"); d.innerHTML = listHtml(p.feats);
-  c.appendChild(d);
-  view.appendChild(c);
+  const hero = el("div", undefined, "pg-hero");
+  hero.appendChild(el("div", p.icon, "pg-ico"));
+  const t = el("div");
+  t.appendChild(el("h2", p.name));
+  t.appendChild(el("p", p.desc));
+  const tags = el("div");
+  tags.innerHTML = '<span class="badge b-yellow">Coming soon</span> <span class="badge b-grey">' + esc(groupOf(id)) + '</span>';
+  t.appendChild(tags);
+  hero.appendChild(t);
+  view.appendChild(hero);
+
+  view.appendChild(el("h3", "What you will be able to do"));
+  view.lastChild.style.marginBottom = "12px";
+  const grid = el("div", undefined, "pg-grid");
+  p.feats.forEach(function (f) {
+    const c = el("div", undefined, "fcard");
+    c.appendChild(el("div", "✓", "fico"));
+    c.appendChild(el("p", f));
+    grid.appendChild(c);
+  });
+  view.appendChild(grid);
+
+  const rc = makeCard("Available now");
+  const rel = el("div", undefined, "related");
+  [["workspace", "💬", "AI Workspace", "Plan a task or chat with WTA."], ["tasks", "✅", "Tasks", "See your saved plans and their progress."]].forEach(function (r) {
+    const a = el("a", undefined, "rel"); a.href = "#" + r[0];
+    a.innerHTML = '<div class="sico">' + r[1] + '</div><div><b>' + r[2] + '</b><small>' + r[3] + '</small></div>';
+    rel.appendChild(a);
+  });
+  rc.appendChild(rel);
+  view.appendChild(rc);
 }
 
 // ===== ROUTER =====
@@ -535,7 +690,7 @@ function render() {
   view.innerHTML = "";
   if (id === "dashboard") renderDashboard();
   else if (id === "workspace") renderWorkspace();
-  else if (id === "tasks") { if (taskId) renderTask(taskId); else renderTasks(); }
+  else if (id === "tasks") renderTasks(taskId);
   else renderPage(id);
   side.classList.remove("open");
   shade.classList.remove("show");
@@ -607,4 +762,4 @@ document.getElementById("menuBtn").onclick = function () { side.classList.toggle
 shade.onclick = function () { side.classList.remove("open"); shade.classList.remove("show"); };
 window.addEventListener("hashchange", render);
 renderAuthArea();
-render();2
+render();
