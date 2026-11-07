@@ -3,81 +3,113 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f6531f">
 <title>WTA | Web Task Agent</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff8a4c'/%3E%3Cstop offset='1' stop-color='%23f6531f'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='36' height='36' rx='9' fill='url(%23g)'/%3E%3Cpath d='M7 10l5 16 6-11 6 11 5-16' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='18' cy='15' r='2.6' fill='%23ffd43b'/%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <style>
-:root{--orange:#f6531f;--orange-d:#d94312;--orange-l:#fff1ec;--green:#1a7f37;--green-bg:#e6f6ec;--yellow:#9a6700;--yellow-bg:#fff8c5;--red:#cf222e;--line:#e5e5e5;--bg:#f7f7f8;--text:#1f2328;--muted:#6b7280}
+:root{--orange:#f6531f;--orange-d:#d94312;--orange-l:#fff1ec;--green:#1a7f37;--green-bg:#e6f6ec;--yellow:#9a6700;--yellow-bg:#fff8c5;--red:#cf222e;--red-bg:#ffebe9;--line:#e5e5e5;--bg:#f7f7f8;--text:#1f2328;--muted:#6b7280}
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);font-size:15px}
 a{color:inherit;text-decoration:none}
-.top{position:fixed;top:0;left:0;right:0;height:56px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 16px;z-index:20}
-.logo{font-weight:bold;font-size:22px;color:var(--orange);letter-spacing:1px}
-.crumb{display:none;color:var(--muted);font-size:14px;margin-left:8px}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.top{position:fixed;top:0;left:0;right:0;height:56px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 14px;z-index:20}
+.brand{display:flex;align-items:center;gap:8px}
+.logo{font-weight:bold;font-size:21px;color:var(--orange);letter-spacing:1px}
+.crumb{display:none;color:var(--muted);font-size:14px;margin-left:10px}
 .crumb b{color:var(--text);font-weight:600}
 .menu-btn{background:none;border:1px solid var(--line);border-radius:6px;font-size:18px;padding:4px 10px;cursor:pointer}
 .right{margin-left:auto;display:flex;align-items:center;gap:10px}
 .who{font-size:13px;color:var(--muted);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none}
-.btn{background:var(--orange);color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;display:inline-block}
+.btn{background:var(--orange);color:#fff;border:0;border-radius:6px;padding:9px 15px;font-size:14px;cursor:pointer;display:inline-block;text-align:center}
 .btn:hover{background:var(--orange-d)}
 .btn:disabled{opacity:.6;cursor:default}
 .btn-o{background:#fff;color:var(--text);border:1px solid var(--line)}
 .btn-o:hover{background:#f3f3f3}
-.side{position:fixed;top:56px;bottom:0;left:0;width:250px;background:#fff;border-right:1px solid var(--line);padding:8px;overflow-y:auto;transform:translateX(-100%);transition:transform .2s;z-index:15}
+.btn-r{background:#fff;color:var(--red);border:1px solid #f4b7bb}
+.btn-r:hover{background:var(--red-bg)}
+.btn-s{padding:6px 11px;font-size:13px}
+.side{position:fixed;top:56px;bottom:0;left:0;width:260px;background:#fff;border-right:1px solid var(--line);padding:6px 8px 24px;overflow-y:auto;transform:translateX(-100%);transition:transform .2s;z-index:15}
 .side.open{transform:translateX(0)}
-.grp{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);padding:14px 12px 6px}
-.side a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:6px;font-size:15px}
+.gbtn{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:0;padding:12px 10px 7px;font-size:13px;color:var(--muted);font-weight:bold;cursor:pointer;text-align:left}
+.gitems{display:none}
+.gitems.open{display:block}
+.side a{display:flex;gap:10px;align-items:center;padding:8px 12px;border-radius:6px;font-size:14.5px}
 .side a:hover{background:#f3f3f3}
 .side a.active{background:var(--orange-l);color:var(--orange);font-weight:bold}
 .shade{display:none;position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.3);z-index:10}
 .shade.show{display:block}
-main{padding:76px 16px 32px;max-width:1150px}
+main{padding:76px 14px 36px;max-width:1150px}
 h2{margin:0 0 4px;font-size:22px}
-h3{margin:0 0 12px;font-size:16px}
-.sub{color:var(--muted);margin:0 0 20px;font-size:14px}
-.hero{background:linear-gradient(135deg,#fff1ec 0%,#ffffff 70%);border:1px solid #ffd9cc;border-radius:12px;padding:22px 20px;margin-bottom:16px}
-.hero h2{font-size:24px;margin-bottom:6px}
-.hero p{margin:0 0 16px;color:#4b5563;font-size:15px;line-height:1.5}
-.hero .acts{display:flex;gap:8px;flex-wrap:wrap}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+h3{margin:0;font-size:16px}
+h4{margin:0 0 6px;font-size:14px}
+.sub{color:var(--muted);margin:0 0 18px;font-size:14px;line-height:1.45}
+.meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12.5px;margin-top:3px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.head-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.hero{background:linear-gradient(135deg,#fff1ec 0%,#ffffff 75%);border:1px solid #ffd9cc;border-radius:12px;padding:20px 18px;margin-bottom:14px}
+.hero h2{font-size:23px;margin-bottom:6px}
+.hero p{margin:0 0 12px;color:#4b5563;line-height:1.5}
+.hero-ta,.task-ta{width:100%;min-height:84px;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;resize:vertical;background:#fff}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.stats .card{margin:0}
 .stat{display:flex;gap:12px;align-items:center}
-.sico{width:40px;height:40px;border-radius:10px;background:var(--orange-l);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}
+.sico{width:40px;height:40px;border-radius:10px;background:var(--orange-l);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
 .num{font-size:24px;font-weight:bold;line-height:1}
 .label{color:var(--muted);font-size:13px;margin-top:4px}
-.cols{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:16px}
-.steps{margin:0;padding:0;list-style:none;counter-reset:s}
-.steps li{counter-increment:s;display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;line-height:1.45}
-.steps li:last-child{border-bottom:0}
-.steps li:before{content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;background:var(--orange-l);color:var(--orange);font-weight:bold;font-size:12px;display:flex;align-items:center;justify-content:center}
-.steps small{display:block;color:var(--muted);margin-top:2px;font-size:12px}
-.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px}
+.cols{display:grid;grid-template-columns:1fr;gap:0 16px}
+.trow{display:block;padding:12px 0;border-bottom:1px solid #f0f0f0}
+.trow:last-child{border-bottom:0;padding-bottom:0}
+.trow-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.trow-top b{font-size:14.5px;line-height:1.35;overflow-wrap:anywhere}
+.prog{height:6px;background:#f0f0f0;border-radius:4px;margin-top:9px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--orange);border-radius:4px}
+.arow{padding:11px 0;border-bottom:1px solid #f0f0f0}
+.arow:last-child{border-bottom:0;padding-bottom:0}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;white-space:nowrap}
 .b-yellow{background:var(--yellow-bg);color:var(--yellow)}
 .b-green{background:var(--green-bg);color:var(--green)}
-.tiles{display:grid;grid-template-columns:1fr;gap:12px}
-.tile{display:block;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;transition:border-color .15s,box-shadow .15s}
-.tile:hover{border-color:var(--orange);box-shadow:0 2px 10px rgba(246,83,31,.12)}
-.tile .t-ico{font-size:24px;margin-bottom:8px}
-.tile b{display:block;margin-bottom:4px}
-.tile p{margin:0 0 10px;color:var(--muted);font-size:13px;line-height:1.45}
-.empty{text-align:center;padding:28px 12px;color:var(--muted);font-size:14px}
-.empty .ico{font-size:30px;margin-bottom:6px}
+.b-orange{background:var(--orange-l);color:var(--orange-d)}
+.b-red{background:var(--red-bg);color:var(--red)}
+.b-grey{background:#eef0f2;color:#4b5563}
+.empty{text-align:center;padding:22px 10px;color:var(--muted);font-size:14px;line-height:1.5}
+.empty .ico{font-size:28px;margin-bottom:6px}
+.empty b{display:block;color:var(--text);margin-bottom:2px}
 .feat{margin:0;padding:0;list-style:none}
-.feat li{padding:9px 0 9px 28px;position:relative;border-bottom:1px solid #f0f0f0;font-size:14px}
+.feat li{padding:8px 0 8px 22px;position:relative;border-bottom:1px solid #f0f0f0;font-size:14px;line-height:1.45}
 .feat li:last-child{border-bottom:0}
-.feat li:before{content:"→";position:absolute;left:4px;color:var(--orange);font-weight:bold}
-.head-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
-.head-row h3{margin:0}
-.chat{display:flex;flex-direction:column;gap:10px;min-height:240px}
+.feat li:before{content:"";position:absolute;left:3px;top:15px;width:8px;height:8px;border-radius:50%;background:var(--orange)}
+.tabbar{display:flex;gap:8px;margin-bottom:14px}
+.tabbar button{flex:1;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:14px}
+.tabbar button.on{background:var(--orange-l);color:var(--orange-d);border-color:var(--orange);font-weight:bold}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.chip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:7px 12px;font-size:13px;cursor:pointer;text-align:left}
+.chip:hover{border-color:var(--orange);color:var(--orange-d)}
+.qchip{display:inline-block;background:#f3f4f6;border-radius:6px;padding:5px 9px;margin:0 6px 6px 0;font-size:13px}
+.sec{padding:12px 0;border-bottom:1px solid #f0f0f0}
+.sec:last-child{border-bottom:0;padding-bottom:0}
+.sec p{margin:0;line-height:1.5;font-size:14px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0;font-size:14px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0}
+.trk{list-style:none;margin:0;padding:0}
+.trk li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f0f0;font-size:14px}
+.trk li:last-child{border-bottom:0}
+.trk .dot{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid #d4d7dc;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.trk li.d .dot{background:var(--green);border-color:var(--green)}
+.trk em{margin-left:auto;font-style:normal;color:var(--muted);font-size:12.5px}
+.note{background:var(--yellow-bg);border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.45;margin-top:12px;color:#5c4400}
+.msgline{font-size:13px;margin-top:8px;min-height:16px;color:var(--red)}
+.hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4}
+.chat{display:flex;flex-direction:column;gap:10px;min-height:220px}
 .bub{max-width:88%;padding:10px 14px;border-radius:12px;font-size:15px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .bub.u{align-self:flex-end;background:var(--orange);color:#fff;border-bottom-right-radius:4px}
 .bub.a{align-self:flex-start;background:#f3f4f6;border-bottom-left-radius:4px}
-.bub.err{background:#ffebe9;color:var(--red)}
-.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
-.chip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:7px 12px;font-size:13px;cursor:pointer}
-.chip:hover{border-color:var(--orange);color:var(--orange)}
+.bub.err{background:var(--red-bg);color:var(--red)}
 .composer{display:flex;gap:8px;margin-top:14px;align-items:flex-end}
 .composer textarea{flex:1;min-height:44px;max-height:160px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;resize:vertical}
-.hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.4}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;padding:16px}
 .modal.show{display:flex}
 .box{background:#fff;border-radius:10px;padding:20px;width:100%;max-width:380px}
@@ -90,22 +122,25 @@ h3{margin:0 0 12px;font-size:16px}
 .msg.ok{color:var(--green)}
 .row{display:flex;gap:8px}
 .row .btn{flex:1}
-@media(min-width:600px){.who{display:block}.tiles{grid-template-columns:1fr 1fr}.stats{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:600px){.who{display:block}.stats{grid-template-columns:repeat(4,1fr)}}
 @media(min-width:800px){
 .menu-btn{display:none}
 .crumb{display:block}
 .side{transform:none}
 .shade{display:none!important}
-main{margin-left:250px;padding:80px 32px 40px}
+main{margin-left:260px;padding:80px 32px 40px}
 .cols{grid-template-columns:3fr 2fr}
 }
-@media(min-width:1100px){.tiles{grid-template-columns:repeat(3,1fr)}}
+@media(prefers-reduced-motion:reduce){.side{transition:none}}
 </style>
 </head>
 <body>
 <div class="top">
 <button class="menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+<a class="brand" href="#dashboard">
+<svg width="30" height="30" viewBox="0 0 36 36" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8a4c"/><stop offset="1" stop-color="#f6531f"/></linearGradient></defs><rect width="36" height="36" rx="9" fill="url(#lg)"/><path d="M7 10l5 16 6-11 6 11 5-16" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="15" r="2.6" fill="#ffd43b"/></svg>
 <span class="logo">WTA</span>
+</a>
 <span class="crumb" id="crumb"></span>
 <div class="right" id="authArea"></div>
 </div>
@@ -129,371 +164,6 @@ main{margin-left:250px;padding:80px 32px 40px}
 </div>
 </div>
 
-<script>
-// ===== SETTINGS =====
-const SUPABASE_URL = "https://lgbtckexyubvhskgljzq.supabase.co";
-const SUPABASE_KEY = "sb_publishable_iBVXrI8v9e8dUtT6wF51jw_8iycTB-8";
-const FUNCTION_URL = SUPABASE_URL + "/functions/v1/rapid-endpoint";
-
-let sb = null;
-try {
-  if (!SUPABASE_KEY.startsWith("PASTE")) sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-} catch (e) { sb = null; }
-
-let user = null;
-let workspace = null;
-let mode = "in";
-let chat = [];
-let chatBusy = false;
-
-// ===== PAGES =====
-const pages = {
- dashboard:{icon:"🏠", name:"Dashboard"},
- workspace:{icon:"💬", name:"AI Workspace", desc:"Give instructions to the agent and watch it work."},
- research:{icon:"🔎", name:"Web Research", desc:"Search the web, visit pages and collect sourced findings.",
-   feats:["Plan searches and open real web pages","Extract text with source links and dates","Check claims against independent sources","Choose how deep the research goes"]},
- academic:{icon:"🎓", name:"Academic", desc:"Assignment research, literature reviews, citations and study tools.",
-   feats:["Assignment research with real, traceable sources","Literature reviews and citations (APA, MLA, Harvard)","Read uploaded PDFs, notes and slides","Quizzes, study planner and revision notes"]},
- tasks:{icon:"✅", name:"Tasks", desc:"Pending, running, completed and failed tasks.",
-   feats:["See pending, running, done and failed tasks","Retry failures and review history","Tasks keep running even when your phone is off"]},
- memory:{icon:"🧠", name:"Memory", desc:"What WTA remembers. View, edit or delete it.",
-   feats:["Saved preferences and project notes","View, edit and delete anything stored","Web content is never saved as trusted memory"]},
- integrations:{icon:"🔌", name:"Integrations", desc:"Connect email and Telegram.",
-   feats:["Connect email (Gmail or SMTP)","Connect Telegram","Connect, disconnect and see status"]},
- outreach:{icon:"📨", name:"Outreach", desc:"Leads, templates and campaigns.",
-   feats:["Find businesses and verify their online presence","Templates with placeholders and a portfolio link","Preview, approve and track every message"]},
- files:{icon:"📁", name:"Files", desc:"Reports and documents WTA creates for you.",
-   feats:["PDF, Word, CSV and text reports","Download anything WTA creates","Organised by project"]},
- permissions:{icon:"🛡️", name:"Permissions", desc:"Choose what the agent may do and what needs your approval.",
-   feats:["Supervised or Autonomous mode","Approve sensitive actions before they happen","Usage limits and an emergency stop"]},
- settings:{icon:"⚙️", name:"Settings", desc:"AI provider, operating mode and account.",
-   feats:["Choose your AI provider","Set the operating mode","Manage your account and workspace"]}
-};
-const groups = [
- {label:"Overview", items:["dashboard","workspace"]},
- {label:"Agent tools", items:["research","academic","tasks","memory"]},
- {label:"Connect and share", items:["integrations","outreach","files"]},
- {label:"Control", items:["permissions","settings"]}
-];
-
-const side = document.getElementById("side");
-const view = document.getElementById("view");
-const shade = document.getElementById("shade");
-
-let sideHtml = "";
-groups.forEach(function (g) {
-  sideHtml += '<div class="grp">' + g.label + '</div>';
-  g.items.forEach(function (id) {
-    sideHtml += '<a href="#' + id + '" data-id="' + id + '"><span>' + pages[id].icon + '</span>' + pages[id].name + '</a>';
-  });
-});
-side.innerHTML = sideHtml;
-
-function el(tag, text, cls) {
-  const e = document.createElement(tag);
-  if (text !== undefined) e.textContent = text;
-  if (cls) e.className = cls;
-  return e;
-}
-
-// ===== HEADER =====
-function renderAuthArea() {
-  const area = document.getElementById("authArea");
-  area.innerHTML = "";
-  if (user) {
-    area.appendChild(el("span", user.email, "who"));
-    const out = el("button", "Sign out", "btn btn-o");
-    out.onclick = signOut;
-    area.appendChild(out);
-  } else {
-    const inn = el("button", "Sign in", "btn");
-    inn.onclick = openModal;
-    area.appendChild(inn);
-  }
-}
-
-// ===== DASHBOARD =====
-function renderDashboard() {
-  const name = user ? user.email.split("@")[0] : "";
-  const hero = el("div", undefined, "hero");
-  hero.appendChild(el("h2", user ? "Welcome back, " + name : "Welcome to WTA"));
-  hero.appendChild(el("p", user
-    ? "Your workspace is ready. Give WTA a task, research a topic or start an academic project."
-    : "WTA (Web Task Agent) researches the web, studies sources and gets digital work done for you. Sign in to save your work."));
-  const acts = el("div", undefined, "acts");
-  if (!user) { const b = el("button", "Create free account", "btn"); b.onclick = openModal; acts.appendChild(b); }
-  const l1 = el("a", "Open AI Workspace", user ? "btn" : "btn btn-o"); l1.href = "#workspace"; acts.appendChild(l1);
-  const l2 = el("a", "Explore Web Research", "btn btn-o"); l2.href = "#research"; acts.appendChild(l2);
-  hero.appendChild(acts);
-  view.appendChild(hero);
-
-  const stats = el("div", undefined, "stats");
-  stats.innerHTML =
-    '<div class="card stat"><div class="sico">⚡</div><div><div class="num">0</div><div class="label">Tasks running</div></div></div>' +
-    '<div class="card stat"><div class="sico">✅</div><div><div class="num">0</div><div class="label">Completed</div></div></div>' +
-    '<div class="card stat"><div class="sico">🔗</div><div><div class="num">0</div><div class="label">Sources collected</div></div></div>' +
-    '<div class="card stat"><div class="sico">📄</div><div><div class="num">0</div><div class="label">Files created</div></div></div>';
-  view.appendChild(stats);
-
-  const cols = el("div", undefined, "cols");
-
-  const how = el("div", undefined, "card");
-  how.innerHTML = '<h3>How WTA works</h3><ol class="steps">' +
-    '<li><div>Tell WTA what you need<small>Write your task in plain English.</small></div></li>' +
-    '<li><div>WTA plans and researches<small>It searches, reads sources and keeps track of where facts come from.</small></div></li>' +
-    '<li><div>You review the results<small>Approve sensitive actions and download your report.</small></div></li>' +
-    '</ol>';
-  cols.appendChild(how);
-
-  const act = el("div", undefined, "card");
-  act.innerHTML = '<h3>Recent activity</h3><div class="empty"><div class="ico">🕘</div>No activity yet.<br>Your tasks and research will appear here.</div>';
-  cols.appendChild(act);
-  view.appendChild(cols);
-
-  view.appendChild(el("h3", "What WTA can do"));
-  const tiles = el("div", undefined, "tiles");
-  ["workspace","research","academic","tasks","outreach","permissions"].forEach(function (id) {
-    const p = pages[id];
-    const a = el("a", undefined, "tile");
-    a.href = "#" + id;
-    const tag = id === "workspace" ? '<span class="badge b-green">Available</span>' : '<span class="badge b-yellow">Coming soon</span>';
-    a.innerHTML = '<div class="t-ico">' + p.icon + '</div><b>' + p.name + '</b><p>' + p.desc + '</p>' + tag;
-    tiles.appendChild(a);
-  });
-  view.appendChild(tiles);
-}
-
-// ===== AI WORKSPACE (CHAT) =====
-function renderWorkspace() {
-  const p = pages.workspace;
-  view.appendChild(el("h2", p.icon + " " + p.name));
-  view.appendChild(el("p", p.desc, "sub"));
-
-  const card = el("div", undefined, "card");
-
-  if (!user) {
-    const e = el("div", undefined, "empty");
-    e.innerHTML = '<div class="ico">🔒</div>Sign in to chat with WTA.';
-    card.appendChild(e);
-    const wrap = el("div");
-    wrap.style.textAlign = "center";
-    const b = el("button", "Sign in", "btn");
-    b.onclick = openModal;
-    wrap.appendChild(b);
-    card.appendChild(wrap);
-    view.appendChild(card);
-    return;
-  }
-
-  const head = el("div", undefined, "head-row");
-  head.appendChild(el("h3", "Chat"));
-  const nb = el("button", "New chat", "btn btn-o");
-  nb.onclick = function () { if (chatBusy) return; chat = []; drawChat(); };
-  head.appendChild(nb);
-  card.appendChild(head);
-
-  const list = el("div", undefined, "chat");
-  list.id = "chatList";
-  card.appendChild(list);
-
-  const comp = el("div", undefined, "composer");
-  const ta = document.createElement("textarea");
-  ta.id = "chatInput";
-  ta.placeholder = "Type your message...";
-  ta.maxLength = 4000;
-  ta.rows = 1;
-  ta.addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChat(); }
-  });
-  const send = el("button", "Send", "btn");
-  send.id = "chatSend";
-  send.onclick = sendChat;
-  comp.appendChild(ta);
-  comp.appendChild(send);
-  card.appendChild(comp);
-
-  card.appendChild(el("div", "WTA currently answers from the AI's own knowledge. It cannot browse the web or open links yet, so double-check important facts.", "hint"));
-  view.appendChild(card);
-  drawChat();
-}
-
-function drawChat() {
-  const list = document.getElementById("chatList");
-  if (!list) return;
-  list.innerHTML = "";
-
-  if (!chat.length && !chatBusy) {
-    const e = el("div", undefined, "empty");
-    e.innerHTML = '<div class="ico">💬</div>Ask WTA anything, or start with one of these:';
-    list.appendChild(e);
-    const row = el("div", undefined, "chips");
-    ["Explain a topic in simple terms", "Help me plan a research project", "Outline an essay for me"].forEach(function (t) {
-      const c = el("button", t, "chip");
-      c.onclick = function () {
-        const ta = document.getElementById("chatInput");
-        ta.value = t + ": ";
-        ta.focus();
-      };
-      row.appendChild(c);
-    });
-    list.appendChild(row);
-  }
-
-  chat.forEach(function (m) {
-    list.appendChild(el("div", m.content, "bub " + (m.role === "user" ? "u" : "a") + (m.error ? " err" : "")));
-  });
-  if (chatBusy) list.appendChild(el("div", "Thinking...", "bub a"));
-
-  const send = document.getElementById("chatSend");
-  if (send) send.disabled = chatBusy;
-  if ((chat.length || chatBusy) && list.lastChild) list.lastChild.scrollIntoView({ block: "end" });
-}
-
-async function sendChat() {
-  if (chatBusy || !sb || !user) return;
-  const ta = document.getElementById("chatInput");
-  if (!ta) return;
-  const text = ta.value.trim();
-  if (!text) return;
-  ta.value = "";
-  chat.push({ role: "user", content: text });
-  chatBusy = true;
-  drawChat();
-  try {
-    const s = await sb.auth.getSession();
-    const token = s.data.session && s.data.session.access_token;
-    if (!token) throw new Error("Please sign in again.");
-    const history = chat.filter(function (m) { return !m.error; })
-                        .map(function (m) { return { role: m.role, content: m.content }; });
-    const r = await fetch(FUNCTION_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": SUPABASE_KEY },
-      body: JSON.stringify({ messages: history })
-    });
-    let data = {};
-    try { data = await r.json(); } catch (e) {}
-    if (!r.ok || !data.reply) throw new Error(data.error || "Something went wrong. Please try again.");
-    chat.push({ role: "assistant", content: data.reply });
-  } catch (err) {
-    chat.push({ role: "assistant", content: err.message || "Something went wrong.", error: true });
-  }
-  chatBusy = false;
-  drawChat();
-}
-
-// ===== OTHER PAGES =====
-function renderPage(id) {
-  const p = pages[id];
-  view.appendChild(el("h2", p.icon + " " + p.name));
-  view.appendChild(el("p", p.desc, "sub"));
-
-  const c = el("div", undefined, "card");
-  let h = '<div class="head-row"><h3>What you will be able to do</h3><span class="badge b-yellow">Coming soon</span></div><ul class="feat">';
-  p.feats.forEach(function (f) { h += '<li>' + f + '</li>'; });
-  h += '</ul>';
-  c.innerHTML = h;
-  view.appendChild(c);
-}
-
-function render() {
-  let id = location.hash.slice(1) || "dashboard";
-  if (!pages[id]) id = "dashboard";
-  side.querySelectorAll("a").forEach(function (a) { a.classList.toggle("active", a.dataset.id === id); });
-  document.getElementById("crumb").innerHTML = "WTA &nbsp;/&nbsp; <b>" + pages[id].name + "</b>";
-  view.innerHTML = "";
-  if (id === "dashboard") renderDashboard();
-  else if (id === "workspace") renderWorkspace();
-  else renderPage(id);
-  side.classList.remove("open");
-  shade.classList.remove("show");
-  window.scrollTo(0, 0);
-}
-
-// ===== LOGIN WINDOW =====
-const modal = document.getElementById("modal");
-const msg = document.getElementById("msg");
-const submitBtn = document.getElementById("submitBtn");
-
-function setMsg(text, kind) { msg.textContent = text; msg.className = "msg " + (kind || ""); }
-
-function setMode(m) {
-  mode = m;
-  document.getElementById("tabIn").classList.toggle("on", m === "in");
-  document.getElementById("tabUp").classList.toggle("on", m === "up");
-  submitBtn.textContent = m === "in" ? "Sign in" : "Create account";
-  document.getElementById("password").autocomplete = m === "in" ? "current-password" : "new-password";
-  setMsg("");
-}
-function openModal() {
-  if (!sb) { alert("Sign in is unavailable right now. Please try again later."); return; }
-  setMode("in");
-  modal.classList.add("show");
-}
-function closeModal() { modal.classList.remove("show"); }
-
-document.getElementById("tabIn").onclick = function () { setMode("in"); };
-document.getElementById("tabUp").onclick = function () { setMode("up"); };
-document.getElementById("cancelBtn").onclick = closeModal;
-modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
-
-submitBtn.onclick = async function () {
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value;
-  if (!email || !password) { setMsg("Enter your email and password.", "err"); return; }
-  if (mode === "up" && password.length < 8) { setMsg("Password must be at least 8 characters.", "err"); return; }
-  submitBtn.disabled = true;
-  setMsg("Please wait...");
-  try {
-    if (mode === "in") {
-      const r = await sb.auth.signInWithPassword({ email: email, password: password });
-      if (r.error) throw r.error;
-      closeModal();
-    } else {
-      const r = await sb.auth.signUp({ email: email, password: password, options: { emailRedirectTo: location.origin } });
-      if (r.error) throw r.error;
-      if (r.data.session) { closeModal(); }
-      else { setMsg("Account created. Check your email and tap the confirmation link, then sign in.", "ok"); }
-    }
-  } catch (err) {
-    setMsg(err.message || "Something went wrong.", "err");
-  }
-  submitBtn.disabled = false;
-};
-
-async function signOut() { if (sb) await sb.auth.signOut(); }
-
-// ===== LOAD USER AND WORKSPACE =====
-async function loadWorkspace() {
-  workspace = null;
-  if (!sb || !user) return;
-  const r = await sb.from("workspaces").select("name,type").limit(1);
-  if (!r.error && r.data && r.data.length) workspace = r.data[0];
-}
-
-async function setUser(u) {
-  user = u;
-  if (!u) { chat = []; chatBusy = false; }
-  renderAuthArea();
-  render();
-  await loadWorkspace();
-  render();
-}
-
-if (sb) {
-  sb.auth.getSession().then(function (r) { setUser(r.data.session ? r.data.session.user : null); });
-  sb.auth.onAuthStateChange(function (event, session) {
-    const u = session ? session.user : null;
-    if ((u && u.id) !== (user && user.id)) setUser(u);
-  });
-}
-
-// ===== MENU =====
-document.getElementById("menuBtn").onclick = function () { side.classList.toggle("open"); shade.classList.toggle("show"); };
-shade.onclick = function () { side.classList.remove("open"); shade.classList.remove("show"); };
-window.addEventListener("hashchange", render);
-
-renderAuthArea();
-render();
-</script>
+<script src="app.js"></script>
 </body>
 </html>
