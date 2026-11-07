@@ -19,7 +19,7 @@ a{color:inherit;text-decoration:none}
 .who{font-size:13px;color:var(--muted);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none}
 .btn{background:var(--orange);color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;display:inline-block}
 .btn:hover{background:var(--orange-d)}
-.btn:disabled{opacity:.6}
+.btn:disabled{opacity:.6;cursor:default}
 .btn-o{background:#fff;color:var(--text);border:1px solid var(--line)}
 .btn-o:hover{background:#f3f3f3}
 .side{position:fixed;top:56px;bottom:0;left:0;width:250px;background:#fff;border-right:1px solid var(--line);padding:8px;overflow-y:auto;transform:translateX(-100%);transition:transform .2s;z-index:15}
@@ -67,6 +67,17 @@ h3{margin:0 0 12px;font-size:16px}
 .feat li:before{content:"→";position:absolute;left:4px;color:var(--orange);font-weight:bold}
 .head-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
 .head-row h3{margin:0}
+.chat{display:flex;flex-direction:column;gap:10px;min-height:240px}
+.bub{max-width:88%;padding:10px 14px;border-radius:12px;font-size:15px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.bub.u{align-self:flex-end;background:var(--orange);color:#fff;border-bottom-right-radius:4px}
+.bub.a{align-self:flex-start;background:#f3f4f6;border-bottom-left-radius:4px}
+.bub.err{background:#ffebe9;color:var(--red)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:7px 12px;font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--orange);color:var(--orange)}
+.composer{display:flex;gap:8px;margin-top:14px;align-items:flex-end}
+.composer textarea{flex:1;min-height:44px;max-height:160px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;resize:vertical}
+.hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.4}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;padding:16px}
 .modal.show{display:flex}
 .box{background:#fff;border-radius:10px;padding:20px;width:100%;max-width:380px}
@@ -122,6 +133,7 @@ main{margin-left:250px;padding:80px 32px 40px}
 // ===== SETTINGS =====
 const SUPABASE_URL = "https://lgbtckexyubvhskgljzq.supabase.co";
 const SUPABASE_KEY = "sb_publishable_iBVXrI8v9e8dUtT6wF51jw_8iycTB-8";
+const FUNCTION_URL = SUPABASE_URL + "/functions/v1/rapid-endpoint";
 
 let sb = null;
 try {
@@ -131,12 +143,13 @@ try {
 let user = null;
 let workspace = null;
 let mode = "in";
+let chat = [];
+let chatBusy = false;
 
 // ===== PAGES =====
 const pages = {
  dashboard:{icon:"🏠", name:"Dashboard"},
- workspace:{icon:"💬", name:"AI Workspace", desc:"Give instructions to the agent and watch it work.",
-   feats:["Give instructions in plain English","See the agent's plan and live progress","Pause, resume or stop any task"]},
+ workspace:{icon:"💬", name:"AI Workspace", desc:"Give instructions to the agent and watch it work."},
  research:{icon:"🔎", name:"Web Research", desc:"Search the web, visit pages and collect sourced findings.",
    feats:["Plan searches and open real web pages","Extract text with source links and dates","Check claims against independent sources","Choose how deep the research goes"]},
  academic:{icon:"🎓", name:"Academic", desc:"Assignment research, literature reviews, citations and study tools.",
@@ -243,10 +256,129 @@ function renderDashboard() {
     const p = pages[id];
     const a = el("a", undefined, "tile");
     a.href = "#" + id;
-    a.innerHTML = '<div class="t-ico">' + p.icon + '</div><b>' + p.name + '</b><p>' + p.desc + '</p><span class="badge b-yellow">Coming soon</span>';
+    const tag = id === "workspace" ? '<span class="badge b-green">Available</span>' : '<span class="badge b-yellow">Coming soon</span>';
+    a.innerHTML = '<div class="t-ico">' + p.icon + '</div><b>' + p.name + '</b><p>' + p.desc + '</p>' + tag;
     tiles.appendChild(a);
   });
   view.appendChild(tiles);
+}
+
+// ===== AI WORKSPACE (CHAT) =====
+function renderWorkspace() {
+  const p = pages.workspace;
+  view.appendChild(el("h2", p.icon + " " + p.name));
+  view.appendChild(el("p", p.desc, "sub"));
+
+  const card = el("div", undefined, "card");
+
+  if (!user) {
+    const e = el("div", undefined, "empty");
+    e.innerHTML = '<div class="ico">🔒</div>Sign in to chat with WTA.';
+    card.appendChild(e);
+    const wrap = el("div");
+    wrap.style.textAlign = "center";
+    const b = el("button", "Sign in", "btn");
+    b.onclick = openModal;
+    wrap.appendChild(b);
+    card.appendChild(wrap);
+    view.appendChild(card);
+    return;
+  }
+
+  const head = el("div", undefined, "head-row");
+  head.appendChild(el("h3", "Chat"));
+  const nb = el("button", "New chat", "btn btn-o");
+  nb.onclick = function () { if (chatBusy) return; chat = []; drawChat(); };
+  head.appendChild(nb);
+  card.appendChild(head);
+
+  const list = el("div", undefined, "chat");
+  list.id = "chatList";
+  card.appendChild(list);
+
+  const comp = el("div", undefined, "composer");
+  const ta = document.createElement("textarea");
+  ta.id = "chatInput";
+  ta.placeholder = "Type your message...";
+  ta.maxLength = 4000;
+  ta.rows = 1;
+  ta.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChat(); }
+  });
+  const send = el("button", "Send", "btn");
+  send.id = "chatSend";
+  send.onclick = sendChat;
+  comp.appendChild(ta);
+  comp.appendChild(send);
+  card.appendChild(comp);
+
+  card.appendChild(el("div", "WTA currently answers from the AI's own knowledge. It cannot browse the web or open links yet, so double-check important facts.", "hint"));
+  view.appendChild(card);
+  drawChat();
+}
+
+function drawChat() {
+  const list = document.getElementById("chatList");
+  if (!list) return;
+  list.innerHTML = "";
+
+  if (!chat.length && !chatBusy) {
+    const e = el("div", undefined, "empty");
+    e.innerHTML = '<div class="ico">💬</div>Ask WTA anything, or start with one of these:';
+    list.appendChild(e);
+    const row = el("div", undefined, "chips");
+    ["Explain a topic in simple terms", "Help me plan a research project", "Outline an essay for me"].forEach(function (t) {
+      const c = el("button", t, "chip");
+      c.onclick = function () {
+        const ta = document.getElementById("chatInput");
+        ta.value = t + ": ";
+        ta.focus();
+      };
+      row.appendChild(c);
+    });
+    list.appendChild(row);
+  }
+
+  chat.forEach(function (m) {
+    list.appendChild(el("div", m.content, "bub " + (m.role === "user" ? "u" : "a") + (m.error ? " err" : "")));
+  });
+  if (chatBusy) list.appendChild(el("div", "Thinking...", "bub a"));
+
+  const send = document.getElementById("chatSend");
+  if (send) send.disabled = chatBusy;
+  if ((chat.length || chatBusy) && list.lastChild) list.lastChild.scrollIntoView({ block: "end" });
+}
+
+async function sendChat() {
+  if (chatBusy || !sb || !user) return;
+  const ta = document.getElementById("chatInput");
+  if (!ta) return;
+  const text = ta.value.trim();
+  if (!text) return;
+  ta.value = "";
+  chat.push({ role: "user", content: text });
+  chatBusy = true;
+  drawChat();
+  try {
+    const s = await sb.auth.getSession();
+    const token = s.data.session && s.data.session.access_token;
+    if (!token) throw new Error("Please sign in again.");
+    const history = chat.filter(function (m) { return !m.error; })
+                        .map(function (m) { return { role: m.role, content: m.content }; });
+    const r = await fetch(FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": SUPABASE_KEY },
+      body: JSON.stringify({ messages: history })
+    });
+    let data = {};
+    try { data = await r.json(); } catch (e) {}
+    if (!r.ok || !data.reply) throw new Error(data.error || "Something went wrong. Please try again.");
+    chat.push({ role: "assistant", content: data.reply });
+  } catch (err) {
+    chat.push({ role: "assistant", content: err.message || "Something went wrong.", error: true });
+  }
+  chatBusy = false;
+  drawChat();
 }
 
 // ===== OTHER PAGES =====
@@ -269,7 +401,9 @@ function render() {
   side.querySelectorAll("a").forEach(function (a) { a.classList.toggle("active", a.dataset.id === id); });
   document.getElementById("crumb").innerHTML = "WTA &nbsp;/&nbsp; <b>" + pages[id].name + "</b>";
   view.innerHTML = "";
-  if (id === "dashboard") renderDashboard(); else renderPage(id);
+  if (id === "dashboard") renderDashboard();
+  else if (id === "workspace") renderWorkspace();
+  else renderPage(id);
   side.classList.remove("open");
   shade.classList.remove("show");
   window.scrollTo(0, 0);
@@ -338,6 +472,7 @@ async function loadWorkspace() {
 
 async function setUser(u) {
   user = u;
+  if (!u) { chat = []; chatBusy = false; }
   renderAuthArea();
   render();
   await loadWorkspace();
