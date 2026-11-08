@@ -3,15 +3,38 @@ const SUPABASE_URL = "https://lgbtckexyubvhskgljzq.supabase.co";
 const SUPABASE_KEY = "sb_publishable_iBVXrI8v9e8dUtT6wF51jw_8iycTB-8";
 const CHAT_URL = SUPABASE_URL + "/functions/v1/rapid-endpoint";
 const PLAN_URL = SUPABASE_URL + "/functions/v1/quick-service";
+const PAGE_URL = SUPABASE_URL + "/functions/v1/smart-service";
 
 let sb = null;
 try { sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) { sb = null; }
+
+// extra styles for the research screen
+const extraStyle = document.createElement("style");
+extraStyle.textContent = [
+  ".kv{display:grid;grid-template-columns:100px 1fr;gap:6px 12px;font-size:14px;margin:0}",
+  ".kv dt{color:var(--muted)}",
+  ".kv dd{margin:0;overflow-wrap:anywhere}",
+  ".kv a,.lnk a{color:var(--orange-d);text-decoration:underline}",
+  ".urlrow{display:flex;gap:8px}",
+  ".urlrow input{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit}",
+  ".tblwrap{overflow-x:auto;margin-top:8px}",
+  ".tbl{border-collapse:collapse;font-size:13px;min-width:100%}",
+  ".tbl td,.tbl th{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}",
+  ".hl{padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px;overflow-wrap:anywhere}",
+  ".para{margin:0 0 10px;line-height:1.55;font-size:14.5px;overflow-wrap:anywhere}",
+  ".lnk{display:block;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13.5px;overflow-wrap:anywhere}",
+  ".lnk small{display:block;color:var(--muted)}",
+  ".mini{background:none;border:0;color:var(--orange-d);cursor:pointer;font-size:13.5px;padding:8px 0;text-decoration:underline}",
+  ".errbox{background:var(--red-bg);color:var(--red);border-radius:8px;padding:12px;font-size:14px;line-height:1.45}"
+].join("");
+document.head.appendChild(extraStyle);
 
 // ===== STATE =====
 let user = null, workspace = null, mode = "in";
 let tasks = [], approvalList = [], reports = [], reportCount = 0, dataLoaded = false;
 let chat = [], chatBusy = false, wsTab = "task", draft = "", planBusy = false;
 let taskFilter = "all", taskQuery = "";
+let readUrl = "", readBusy = false, readError = "", readResult = null, showAllText = false, showAllLinks = false;
 const openG = { "Platform": true };
 
 const LEVELS = { 1: "Quick search", 2: "Standard research", 3: "Deep research", 4: "Extensive research" };
@@ -31,7 +54,7 @@ const groups = [
  { label: "Platform", items: [
   P("dashboard", "🏠", "Overview", "Your agent activity at a glance.", []),
   P("workspace", "💬", "AI Workspace", "Give WTA a task. It plans the work and shows its progress.", []),
-  P("research", "🔎", "Web Research", "Search the web, read pages and collect sourced findings.", ["Plan several searches and open real pages", "Extract text with source links and dates", "Cross-check claims and flag conflicts"]),
+  P("research", "🔎", "Web Research", "Read a public web page and see exactly what WTA found, with its source and time.", ["Search and open several pages for one task", "Cross-check claims across sources", "Save findings to a task and write a report"]),
   P("browser", "🌐", "Browser", "Let WTA open and use websites for you, within strict safety limits.", ["Open pages, click, scroll and read", "Never bypasses logins, CAPTCHAs or paywalls", "Every browser action is logged"]),
   P("tasks", "✅", "Tasks", "Every task you give WTA, with its plan and status.", []),
   P("memory", "🧠", "Agent Memory", "What WTA remembers. View, edit or delete it.", ["Saved preferences and project notes", "View, edit and delete anything stored", "Web content is never saved as trusted memory"]),
@@ -100,6 +123,11 @@ function stepsDone(t) { return t.status === "completed" ? 6 : 2; }
 function isActive(t) { return ["planned", "running", "paused"].indexOf(t.status) >= 0; }
 function groupOf(id) { for (let i = 0; i < groups.length; i++) if (groups[i].items.indexOf(id) >= 0) return groups[i].label; return ""; }
 function greeting() { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; }
+function linkHtml(u, text) {
+  return /^https?:\/\//i.test(u)
+    ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer nofollow">' + esc(text || u) + '</a>'
+    : esc(text || u);
+}
 function emptyBlock(icon, title, text) {
   const d = el("div", undefined, "empty");
   d.innerHTML = '<div class="ico">' + icon + '</div><b>' + esc(title) + '</b>' + esc(text);
@@ -280,20 +308,17 @@ function renderDashboard() {
   const main = el("div", undefined, "col");
   const rail = el("div", undefined, "col");
 
-  // greeting
   const g = el("div");
   g.appendChild(el("h2", user ? greeting() + ", " + name : "Welcome to WTA"));
   g.appendChild(el("p", user ? "Here is what WTA is working on." : "Give WTA a task and it plans the work step by step. Sign in to save your tasks.", "sub"));
   g.lastChild.style.marginBottom = "0";
   main.appendChild(g);
 
-  // stats
   const stats = el("div", undefined, "stats");
   stats.innerHTML = statCard("⚡", active.length, "Active tasks") + statCard("✅", done.length, "Completed workflows") +
     statCard("🔔", approvalList.length, "Pending approvals") + statCard("📄", reportCount, "Reports");
   main.appendChild(stats);
 
-  // workspace panel
   const wsp = el("div", undefined, "card wsp");
   const wh = el("div", undefined, "wsp-head");
   wh.appendChild(el("h3", "AI Workspace"));
@@ -318,9 +343,12 @@ function renderDashboard() {
   body.appendChild(ai);
 
   const quick = el("div", undefined, "quick");
-  [["Plan a task", "", "task"], ["Research a topic", "Research: ", "task"], ["Plan an assignment", "Assignment: ", "task"], ["Ask a question", "", "ask"]].forEach(function (q) {
+  [["Plan a task", function () { startTask("", "task"); }],
+   ["Read a web page", function () { go("research"); }],
+   ["Plan an assignment", function () { startTask("Assignment: ", "task"); }],
+   ["Ask a question", function () { startTask("", "ask"); }]].forEach(function (q) {
     const c = el("button", q[0], "chip"); c.type = "button";
-    c.onclick = function () { startTask(q[1], q[2]); };
+    c.onclick = q[1];
     quick.appendChild(c);
   });
   body.appendChild(quick);
@@ -338,7 +366,6 @@ function renderDashboard() {
   wsp.appendChild(body);
   main.appendChild(wsp);
 
-  // completed workflows
   const c2 = makeCard("Completed workflows");
   if (done.length) done.slice(0, 3).forEach(function (t) {
     const a = el("a", undefined, "feed ok"); a.href = "#task/" + t.id;
@@ -348,7 +375,6 @@ function renderDashboard() {
   else c2.appendChild(emptyBlock("✅", "Nothing completed yet", "Finished tasks will be listed here."));
   main.appendChild(c2);
 
-  // right rail: progress
   const c1 = makeCard("Task progress");
   if (active.length) active.slice(0, 5).forEach(function (t) {
     const d = stepsDone(t);
@@ -359,7 +385,6 @@ function renderDashboard() {
   else c1.appendChild(emptyBlock("⚡", "No active tasks", "Plan a task and its progress will show here."));
   rail.appendChild(c1);
 
-  // approvals
   const c3 = makeCard("Pending approvals");
   if (approvalList.length) approvalList.slice(0, 5).forEach(function (a) {
     const d = el("div", undefined, "arow");
@@ -373,7 +398,6 @@ function renderDashboard() {
   else c3.appendChild(emptyBlock("🔔", "Nothing needs your approval", "WTA will ask here before it takes any consequential action."));
   rail.appendChild(c3);
 
-  // activity
   const c5 = makeCard("Activity");
   if (tasks.length) tasks.slice(0, 5).forEach(function (t) {
     const a = el("a", undefined, "feed" + (t.status === "completed" ? " ok" : "")); a.href = "#task/" + t.id;
@@ -383,7 +407,6 @@ function renderDashboard() {
   else c5.appendChild(emptyBlock("🕘", "No activity yet", "Your tasks will show up here."));
   rail.appendChild(c5);
 
-  // reports
   const c4 = makeCard("Recent reports");
   if (reports.length) reports.forEach(function (r) {
     const d = el("div", undefined, "feed");
@@ -546,6 +569,200 @@ async function sendChat() {
   chatBusy = false; drawChat();
 }
 
+// ===== WEB RESEARCH (page reader) =====
+function renderResearch() {
+  const p = pages.research;
+  view.appendChild(el("h2", p.icon + " " + p.name));
+  view.appendChild(el("p", p.desc, "sub"));
+  if (!user) { view.appendChild(signInCard("Sign in to read web pages with WTA.")); return; }
+
+  const col = el("div", undefined, "col");
+
+  const card = el("div", undefined, "card");
+  card.appendChild(el("h3", "Read a web page"));
+  const row = el("div", undefined, "urlrow");
+  row.style.marginTop = "10px";
+  const inp = document.createElement("input");
+  inp.id = "readUrl"; inp.type = "url"; inp.placeholder = "example.com/page"; inp.maxLength = 2000;
+  inp.setAttribute("autocapitalize", "none"); inp.setAttribute("autocorrect", "off");
+  inp.value = readUrl;
+  inp.oninput = function () { readUrl = inp.value; };
+  inp.addEventListener("keydown", function (e) { if (e.key === "Enter") readPage(); });
+  const btn = el("button", readBusy ? "Reading..." : "Read page", "btn");
+  btn.id = "readBtn"; btn.disabled = readBusy;
+  btn.onclick = readPage;
+  row.appendChild(inp); row.appendChild(btn);
+  card.appendChild(row);
+  const chips = el("div", undefined, "chips");
+  const ex = el("button", "Try: Wikipedia article on Abuja", "chip"); ex.type = "button";
+  ex.onclick = function () { inp.value = "https://en.wikipedia.org/wiki/Abuja"; readUrl = inp.value; inp.focus(); };
+  chips.appendChild(ex);
+  card.appendChild(chips);
+  card.appendChild(el("div", "WTA reads one public page at a time. It follows each site's robots.txt, never bypasses logins, CAPTCHAs or paywalls, and cannot read pages that build their content with JavaScript. Each read uses one of your 100 daily page reads.", "hint"));
+  col.appendChild(card);
+
+  const out = el("div", undefined, "col"); out.id = "readOut";
+  col.appendChild(out);
+
+  const soon = makeCard("Coming next", el("span", "Coming soon", "badge b-yellow"));
+  const sd = el("div"); sd.innerHTML = listHtml(p.feats);
+  soon.appendChild(sd);
+  col.appendChild(soon);
+
+  view.appendChild(col);
+  drawRead();
+}
+
+function drawRead() {
+  const btn = document.getElementById("readBtn");
+  if (btn) { btn.disabled = readBusy; btn.textContent = readBusy ? "Reading..." : "Read page"; }
+  const out = document.getElementById("readOut");
+  if (!out) return;
+  out.innerHTML = "";
+  if (readBusy) {
+    const c = el("div", undefined, "card");
+    c.appendChild(emptyBlock("⏳", "Reading the page", "This usually takes a few seconds."));
+    out.appendChild(c);
+    return;
+  }
+  if (readError) {
+    const c = el("div", undefined, "card");
+    c.appendChild(el("div", readError, "errbox"));
+    out.appendChild(c);
+    return;
+  }
+  if (!readResult) return;
+
+  const s = readResult.source, p = readResult.page, notes = readResult.notes || [];
+
+  // source
+  const c1 = makeCard("Source", el("span", "Shown as data only", "badge b-grey"));
+  const kv = el("dl", undefined, "kv");
+  kv.innerHTML = '<dt>Address</dt><dd>' + linkHtml(s.final_url) + '</dd>' +
+    '<dt>Read at</dt><dd>' + esc(new Date(s.retrieved_at).toLocaleString()) + '</dd>' +
+    '<dt>Status</dt><dd>' + esc(s.status) + '</dd>' +
+    '<dt>Size</dt><dd>' + esc(Math.max(1, Math.round(s.bytes / 1024))) + ' KB</dd>';
+  c1.appendChild(kv);
+  c1.appendChild(el("div", "Text from web pages is shown here as plain data. WTA never follows instructions found on a page.", "hint"));
+  out.appendChild(c1);
+
+  // page details
+  const c2 = makeCard(p.title || "Untitled page");
+  if (p.description) { const d = el("p", p.description, "para"); c2.appendChild(d); }
+  const rows = [];
+  if (p.author) rows.push(["Author", p.author]);
+  if (p.published) rows.push(["Published", p.published]);
+  if (p.modified) rows.push(["Updated", p.modified]);
+  if (p.language) rows.push(["Language", p.language]);
+  if (rows.length) {
+    const k2 = el("dl", undefined, "kv");
+    k2.innerHTML = rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join("");
+    c2.appendChild(k2);
+  } else {
+    c2.appendChild(el("div", "No author or date information was found on this page.", "hint"));
+  }
+  out.appendChild(c2);
+
+  notes.forEach(function (n) { out.appendChild(el("div", n, "note")); });
+
+  // headings
+  if (p.headings && p.headings.length) {
+    const c3 = makeCard("Headings (" + p.headings.length + ")");
+    p.headings.forEach(function (h) {
+      const d = el("div", h.text, "hl");
+      d.style.paddingLeft = ((h.level - 1) * 14) + "px";
+      if (h.level === 1) d.style.fontWeight = "bold";
+      c3.appendChild(d);
+    });
+    out.appendChild(c3);
+  }
+
+  // text
+  if (p.text && p.text.length) {
+    const c4 = makeCard("Text found (" + p.text.length + (p.text.length === 1 ? " paragraph)" : " paragraphs)"));
+    const shown = showAllText ? p.text : p.text.slice(0, 6);
+    shown.forEach(function (t) { c4.appendChild(el("p", t, "para")); });
+    if (p.text.length > 6) {
+      const b = el("button", showAllText ? "Show less" : "Show all " + p.text.length + " paragraphs", "mini");
+      b.onclick = function () { showAllText = !showAllText; drawRead(); };
+      c4.appendChild(b);
+    }
+    out.appendChild(c4);
+  }
+
+  // tables
+  if (p.tables && p.tables.length) {
+    p.tables.forEach(function (rowsT, i) {
+      const c5 = makeCard("Table " + (i + 1));
+      const w = el("div", undefined, "tblwrap");
+      w.innerHTML = '<table class="tbl">' + rowsT.map(function (r) {
+        return '<tr>' + r.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join("") + '</tr>';
+      }).join("") + '</table>';
+      c5.appendChild(w);
+      out.appendChild(c5);
+    });
+  }
+
+  // contacts
+  const ct = p.contacts || { emails: [], phones: [], social: [] };
+  const c6 = makeCard("Public contact details");
+  if (ct.emails.length || ct.phones.length || ct.social.length) {
+    const k3 = el("dl", undefined, "kv");
+    let h = "";
+    if (ct.emails.length) h += '<dt>Emails</dt><dd>' + ct.emails.map(esc).join("<br>") + '</dd>';
+    if (ct.phones.length) h += '<dt>Phones</dt><dd>' + ct.phones.map(esc).join("<br>") + '</dd>';
+    if (ct.social.length) h += '<dt>Social</dt><dd>' + ct.social.map(function (u) { return linkHtml(u); }).join("<br>") + '</dd>';
+    k3.innerHTML = h;
+    c6.appendChild(k3);
+    c6.appendChild(el("div", "Only details shown publicly on the page. Check them on the page before using them.", "hint"));
+  } else {
+    c6.appendChild(el("div", "No public contact details were found on this page.", "hint"));
+  }
+  out.appendChild(c6);
+
+  // links
+  if (p.links && p.links.length) {
+    const c7 = makeCard("Links (" + p.links.length + ")");
+    const shownL = showAllLinks ? p.links : p.links.slice(0, 15);
+    shownL.forEach(function (l) {
+      const d = el("div", undefined, "lnk");
+      d.innerHTML = linkHtml(l.url, l.text || l.url) + '<small>' + (l.internal ? "Same site" : "Other site") + '</small>';
+      c7.appendChild(d);
+    });
+    if (p.links.length > 15) {
+      const b = el("button", showAllLinks ? "Show fewer" : "Show all " + p.links.length + " links", "mini");
+      b.onclick = function () { showAllLinks = !showAllLinks; drawRead(); };
+      c7.appendChild(b);
+    }
+    out.appendChild(c7);
+  }
+}
+
+async function readPage() {
+  if (readBusy) return;
+  const inp = document.getElementById("readUrl");
+  const raw = inp ? inp.value.trim() : "";
+  if (!raw) { readError = "Enter a web address to read."; readResult = null; drawRead(); return; }
+  readUrl = raw; readBusy = true; readError = ""; readResult = null; showAllText = false; showAllLinks = false;
+  drawRead();
+  try {
+    const token = await getToken();
+    const r = await fetch(PAGE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": SUPABASE_KEY },
+      body: JSON.stringify({ url: raw })
+    });
+    let data = {};
+    try { data = await r.json(); } catch (e) {}
+    if (!r.ok || !data.page) throw new Error(data.error || "Something went wrong. Please try again.");
+    readResult = data;
+  } catch (err) {
+    readError = err.message || "Something went wrong.";
+  }
+  readBusy = false;
+  drawRead();
+}
+
 // ===== TASKS (list on the left, flow on the right) =====
 function filteredTasks() {
   return tasks.filter(function (t) {
@@ -576,7 +793,6 @@ function renderTasks(taskId) {
   const sel = (taskId && tasks.find(function (x) { return x.id === taskId; })) || (!taskId ? tasks[0] : null);
   const split = el("div", undefined, "split" + (taskId ? " has-detail" : ""));
 
-  // list pane
   const lp = el("div", undefined, "listpane");
   const lc = el("div", undefined, "card");
   const head = el("div", undefined, "head-row");
@@ -601,7 +817,6 @@ function renderTasks(taskId) {
   drawTaskList(box, sel && sel.id);
   lp.appendChild(lc);
 
-  // detail pane
   const dp = el("div", undefined, "detailpane");
   const back = el("a", "Back to tasks", "btn btn-o btn-s backlink"); back.href = "#tasks";
   dp.appendChild(back);
@@ -670,7 +885,7 @@ function renderPage(id) {
 
   const rc = makeCard("Available now");
   const rel = el("div", undefined, "related");
-  [["workspace", "💬", "AI Workspace", "Plan a task or chat with WTA."], ["tasks", "✅", "Tasks", "See your saved plans and their progress."]].forEach(function (r) {
+  [["workspace", "💬", "AI Workspace", "Plan a task or chat with WTA."], ["research", "🔎", "Web Research", "Read a public page and see its sources."], ["tasks", "✅", "Tasks", "See your saved plans and their progress."]].forEach(function (r) {
     const a = el("a", undefined, "rel"); a.href = "#" + r[0];
     a.innerHTML = '<div class="sico">' + r[1] + '</div><div><b>' + r[2] + '</b><small>' + r[3] + '</small></div>';
     rel.appendChild(a);
@@ -690,6 +905,7 @@ function render() {
   view.innerHTML = "";
   if (id === "dashboard") renderDashboard();
   else if (id === "workspace") renderWorkspace();
+  else if (id === "research") renderResearch();
   else if (id === "tasks") renderTasks(taskId);
   else renderPage(id);
   side.classList.remove("open");
@@ -745,7 +961,11 @@ async function signOut() { if (sb) await sb.auth.signOut(); }
 // ===== START =====
 async function setUser(u) {
   user = u; dataLoaded = false;
-  if (!u) { chat = []; chatBusy = false; tasks = []; approvalList = []; reports = []; reportCount = 0; workspace = null; planBusy = false; }
+  if (!u) {
+    chat = []; chatBusy = false; tasks = []; approvalList = []; reports = []; reportCount = 0;
+    workspace = null; planBusy = false;
+    readUrl = ""; readBusy = false; readError = ""; readResult = null;
+  }
   renderAuthArea(); render();
   if (u) { await loadWorkspace(); await loadData(); }
   dataLoaded = true;
